@@ -18,7 +18,8 @@ const products = {
   genset: { id: 0xc06b },
   motordrive: { id: 0xc06c, name: 'E-drive' },
   dcgenset: { id: 0xc06d, name: 'DC genset' },
-  dcload: { id: 0xc06e, name: 'DC load' }
+  dcload: { id: 0xc06e, name: 'DC load' },
+  energymeter: { id: 0xc06f, name: 'energy meter' },
 };
 
 function getType(value) {
