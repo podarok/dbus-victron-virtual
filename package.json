@@ -33,7 +33,7 @@
     "lint-staged": "^15.2.7"
   },
   "dependencies": {
-    "dbus-native-victron": "^0.4.7",
+    "dbus-native-victron": "^0.4.8",
     "debug": "^4.3.7"
   },
   "files": [
