@@ -380,12 +380,17 @@ async function getMax(bus, { path, interface_, destination }) {
   });
 }
 
+function defaultOnPropertiesChanged({ changes }) {
+  return changes; // NOOP
+}
+
 function addVictronInterfaces(
   bus,
   declaration,
   definition,
   add_defaults = true,
-  emitCallback = null
+  emitCallback = null,
+  onPropertiesChanged = defaultOnPropertiesChanged
 ) {
   const warnings = [];
 
@@ -470,6 +475,25 @@ function addVictronInterfaces(
     }
   };
 
+  function processPropertyChanges({ changes: values }) {
+    const changes = {}
+    debug("processPropertyChanges called with values:", values);
+    for (const [k, value] of Object.entries(values)) {
+      changes[k] = validateNewValue(k, declaration.properties[k], value);
+    }
+    const changedProperties = onPropertiesChanged({ changes, instance: definition });
+
+    for (const k of Object.keys(changedProperties)) {
+      if (!declaration.properties || !declaration.properties[k]) {
+        throw new Error(`Property ${k} not found in properties.`);
+      }
+      // we allow readonly properties to be changed through onPropertiesChanged, but
+      // not through SetValue, so we don't check readonly here.
+    }
+
+    return changedProperties;
+  }
+
   // we use this for GetItems and ItemsChanged.
   function getProperties(limitToPropertyNames = [], prependSlash = false) {
     // Filter entries based on specificItem if provided
@@ -505,6 +529,7 @@ function addVictronInterfaces(
     },
     SetValues: function(values /* msg */) {
       debug(`SetValues called with values:`, values);
+      const changes = {}
       for (const [k, value] of values) {
         if (!declaration.properties || !declaration.properties[k]) {
           throw new Error(`Property ${k} not found in properties.`);
@@ -512,12 +537,17 @@ function addVictronInterfaces(
         if ((declaration.properties[k] || {}).readonly) {
           return -1;
         }
-        definition[k] = validateNewValue(k, declaration.properties[k], unwrapValue(value));
+        changes[k] = validateNewValue(k, declaration.properties[k], unwrapValue(value));
+      }
+      const changedProperties = processPropertyChanges({ changes });
+
+      for (const k of Object.keys(changedProperties)) {
+        definition[k] = changedProperties[k];
       }
 
-      debug(`SetValues updated definition:`, definition);
+      debug(`SetValues updated properties:`, changedProperties);
       // TODO: we must include changed values only.
-      iface.emit("ItemsChanged", getProperties(Object.keys(values), true));
+      iface.emit("ItemsChanged", getProperties(Object.keys(changedProperties), true));
       return 0;
     },
     emit: function(name, args) {
@@ -552,11 +582,12 @@ function addVictronInterfaces(
       }
     }
 
-    for (const k of Object.keys(sanitizedValues)) {
-      definition[k] = validateNewValue(k, declaration.properties[k], sanitizedValues[k]);
+    const changedProperties = processPropertyChanges({ changes: sanitizedValues });
+    for (const k of Object.keys(changedProperties)) {
+      definition[k] = changedProperties[k];
     }
     debug(`setValuesLocally updated definition:`, definition);
-    iface.emit("ItemsChanged", getProperties(Object.keys(sanitizedValues), true));
+    iface.emit("ItemsChanged", getProperties(Object.keys(changedProperties), true));
   }
 
   const ifaceDesc = {
@@ -783,8 +814,19 @@ function addVictronInterfaces(
             return -1;
           }
           try {
-            definition[k] = validateNewValue(k, declaration.properties[k], unwrapValue(value));
-            iface.emit("ItemsChanged", getProperties([k], true));
+
+            const changedProperties = processPropertyChanges({
+              changes: {
+                [k]: validateNewValue(k, declaration.properties[k], unwrapValue(value))
+              }
+            })
+
+            // validation done, update definition with all changed properties
+            for (const changedKey of Object.keys(changedProperties)) {
+              definition[changedKey] = validateNewValue(changedKey, declaration.properties[changedKey], changedProperties[changedKey]);
+            }
+
+            iface.emit("ItemsChanged", getProperties(Object.keys(changedProperties), true));
             return 0;
           } catch (e) {
             console.error(e);

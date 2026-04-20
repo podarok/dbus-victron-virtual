@@ -95,7 +95,67 @@ describe("victron-dbus-virtual, setValuesLocally", () => {
     expect(definition.ReadOnlyProp).toBe("original");
     expect(definition.WritableProp).toBe("original");
   });
-})
+
+  describe("setValuesLocally with onPropertiesChanged", () => {
+    it("calls onPropertiesChanged callback and updates the definition accordingly", () => {
+      const declaration = { name: "foo", properties: { StringProp: "s", DerivedProp: "s" } };
+      const definition = { StringProp: "(nothing yet)", DerivedProp: "derived" };
+      const bus = {
+        exportInterface: () => { },
+      };
+      const onPropertiesChanged = jest.fn(({ changes }) => {
+        const result = { ...changes }
+        if (changes.StringProp) {
+          result.DerivedProp = changes.StringProp + " world";
+        }
+        return result;
+      });
+
+      const { setValuesLocally } = addVictronInterfaces(
+        bus,
+        declaration,
+        definition,
+        false,
+        null,
+        onPropertiesChanged
+      );
+
+      setValuesLocally({ StringProp: "hello" });
+
+      expect(onPropertiesChanged).toHaveBeenCalledWith({
+        changes: { StringProp: "hello" },
+        instance: definition
+      });
+
+      expect(definition.StringProp).toBe("hello");
+      expect(definition.DerivedProp).toBe("hello world");
+
+    });
+    it("fails if onPropertiesChanged returns invalid properties", () => {
+      const declaration = { name: "foo", properties: { StringProp: "s", DerivedProp: "s" } };
+      const definition = { StringProp: "(nothing yet)", DerivedProp: "derived" };
+      const bus = {
+        exportInterface: () => { },
+      };
+      const onPropertiesChanged = jest.fn(() => {
+        return { NonExistentProp: "value" };
+      });
+
+      const { setValuesLocally } = addVictronInterfaces(
+        bus,
+        declaration,
+        definition,
+        false,
+        null,
+        onPropertiesChanged
+      );
+
+      expect(() => {
+        setValuesLocally({ StringProp: "hello" });
+      }).toThrow("Property NonExistentProp not found in properties");
+    });
+  });
+});
 
 describe("victron-dbus-virtual, SetValues", () => {
 
@@ -152,4 +212,5 @@ describe("victron-dbus-virtual, SetValues", () => {
     expect(definition.ReadOnlyProp).toBe("original");
   });
 })
+
 
